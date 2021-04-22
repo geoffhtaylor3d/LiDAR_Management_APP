@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
+    <title>LiDAR Download App | ArcGIS API for JavaScript 4.18</title>
+    <style>
+        html,
+        body,
+
+        #viewDiv {
+            padding: 0;
+            margin: 0;
+            height: 100%;
+            width: 100%;
+        }
+
+        #downloadDiv {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            padding: 12px;
+            background-color: rgba(0, 0, 0, 0.5);
+            color: white;
+        }
+
+    </style>
+
+    <link rel="stylesheet" href="https://js.arcgis.com/4.18/esri/themes/light/main.css" />
+    <script src="https://js.arcgis.com/4.18/"></script>
+
+    <script>
+        // Replace the following datasets with your data
+        elevation_layer = "https://tiles.arcgis.com/tiles/uujCiiEZAflDbdxE/arcgis/rest/services/Ohio_DTM/ImageServer"
+        tiles_feature_layer = "https://services1.arcgis.com/uujCiiEZAflDbdxE/arcgis/rest/services/Ohio_LiDAR_Demo_Tiles2/FeatureServer"
+        pointcloud_layer = "https://tiles.arcgis.com/tiles/uujCiiEZAflDbdxE/arcgis/rest/services/Ohio_LiDAR/SceneServer"
+        building_layer = "https://tiles.arcgis.com/tiles/uujCiiEZAflDbdxE/arcgis/rest/services/Ohio_Building3d/SceneServer"
+        // End recommended user inputs
+        require(["esri/Map",
+                 "esri/views/SceneView",
+                 "esri/layers/ElevationLayer",
+                 "esri/layers/FeatureLayer",
+                 "esri/layers/PointCloudLayer",
+                 "esri/layers/SceneLayer"],
+            function(Map,
+                     SceneView,
+                     ElevationLayer,
+                     FeatureLayer,
+                     PointCloudLayer,
+                     SceneLayer) {
+
+            function check_Layers_exist() {
+                const layerList = [[tiles_feature_layer, tiles_3d],
+                                   [pointcloud_layer, pcLayer],
+                                   [building_layer, bldgLayer]]
+                let returnList = []
+                layerList.forEach(function (item) {
+                    if (item[0]) {
+                        returnList.push(item[1])
+                    }
+                })
+                return returnList
+            }
+
+            function tiles_3d_symbol() {
+                return {
+                    type: "polygon-3d", // autocasts as new PolygonSymbol3D()
+                    symbolLayers: [
+                        {
+                            type: "extrude", // autocasts as new ExtrudeSymbol3DLayer()
+                            material: {
+                                color: [255,255,255,0.3]
+                            },
+                            edges: {
+                                type: "solid",
+                                color: [0,0,0,1],
+                                size: 3
+                            },
+                        }
+                    ]
+                };
+            }
+
+            const tiles_3d_renderer = {
+                type: "unique-value", // autocasts as new UniqueValueRenderer()
+                defaultSymbol: tiles_3d_symbol(),
+                defaultLabel: "Other",
+                field: "TYPE",
+                visualVariables: [
+                    {
+                        type: "size",
+                        field: "Z_Max",
+                        valueUnit: "feet" // Converts and extrudes all data values in meters or foot
+                    }
+                ]
+            };
+
+            var tiles_3d = new FeatureLayer({
+                url:tiles_feature_layer,
+                renderer: tiles_3d_renderer,
+                elevationInfo: {
+                    mode: "absolute-height", // TODO: https://developers.arcgis.com/web-scene-specification/objects/elevationInfo/
+                },
+                title: "Extruded building footprints",
+                popupTemplate: {
+                    // autocasts as new PopupTemplate()
+                    title: "Tile {FileName}",
+                    content: [
+                        {
+                            type: "fields",
+                            fieldInfos: [
+                                {
+                                    fieldName: "FileName",
+                                    label: "Tile Name"
+                                },
+                                {
+                                    fieldName: "zlas",
+                                    label: "zlas"
+                                },
+                                {
+                                    fieldName: "dtm",
+                                    label: "DTM"
+                                },
+                                {
+                                    fieldName: "dsm",
+                                    label: "DSM"
+                                },
+                                {
+                                    fieldName: "ndsm",
+                                    label: "nDSM"
+                                },
+                                {
+                                    fieldName: "building_d",
+                                    label: "Building DSM"
+                                },
+                                {
+                                    fieldName: "building_n",
+                                    label: "Building nDSM"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                labelingInfo: [
+                    {
+                        // When using callouts on labels, "above-center" is the only allowed position
+                        labelPlacement: "above-center",
+                        labelExpressionInfo: {
+                            value: "{FileName}"
+                        },
+                        symbol: {
+                            type: "label-3d", // autocasts as new LabelSymbol3D()
+                            symbolLayers: [
+                                {
+                                    type: "text", // autocasts as new TextSymbol3DLayer()
+                                    material: {
+                                        color: "black"
+                                    },
+                                    halo: {
+                                        color: [255, 255, 255, 0.7],
+                                        size: 2
+                                    },
+                                    size: 10
+                                }
+                            ],
+                            // Labels need a small vertical offset that will be used by the callout
+                            verticalOffset: {
+                                screenLength: 150,
+                                maxWorldLength: 2000,
+                                minWorldLength: 30
+                            },
+                            // The callout has to have a defined type (currently only line is possible)
+                            // The size, the color and the border color can be customized
+                            callout: {
+                                type: "line", // autocasts as new LineCallout3D()
+                                size: 0.5,
+                                color: [0, 0, 0],
+                                border: {
+                                    color: [255, 255, 255, 0.7]
+                                }
+                            }
+                        }
+                    }
+                ]
+            });
+
+            // Create elevation layer and add to the map
+            var elevationLayer = new ElevationLayer({
+                url: elevation_layer,
+            });
+
+            // create Point Cloud Layer with a renderer with set values for point size and point density
+            var pcLayer = new PointCloudLayer({
+                url: pointcloud_layer,
+            });
+
+            // Create Building SceneLayer
+            var bldgLayer = new SceneLayer({
+                url: building_layer,
+                title: "Buildings"
+            });
+
+            // Create the Map
+            var map = new Map({
+                basemap: "hybrid",
+                ground: "world-elevation",
+                layers: check_Layers_exist()
+            });
+
+            // Custom Elevation layer must be instantiated after world-elevation
+            if (elevation_layer){
+                map.ground.layers.add(elevationLayer);
+            }
+
+            // Create the SceneView
+            var view = new SceneView({
+                container: "viewDiv",
+                map: map,
+                camera: {
+                    position: [-84.18863494, 40.78227119, 1070.04234],
+                    tilt: 45,
+                }
+            });
+
+            // Zooms to the extent of the layer as defined by
+            // its definitionExpression
+            // This method will work for all FeatureLayers, even
+            // those without a saved `fullExtent` on the service.
+
+            function zoomToLayer(layer) {
+                return layer.queryExtent().then(function(response) {
+                    view.goTo(response.extent)
+                        .catch(function(error){
+                            if (error.name != "AbortError"){
+                                console.error(error);
+                            }
+                        });
+                });
+            }
+
+            // Enable/Disable Analysis Modules and widgets
+            view.when(function() {
+                // Enable/Disable f
+                document.getElementById("downloadInput").addEventListener("change", enableDownloader);
+
+                function enableDownloader(ev) {
+                    // Turn Download Data View off
+                    map.layers.forEach(function(layer) {
+                        if (tiles_3d === layer) {
+                            layer.visible = ev.target.checked;
+                        }
+                    });
+                }
+            });
+        });
+    </script>
+</head>
+
+<body>
+    <div id="viewDiv"></div>
+    <div id="downloadDiv" class="esri-widget">
+        <label>Download Data: <input id="downloadInput" type="checkbox" checked="yes" /> </label>
+    </div>
+</body>
+</html>
